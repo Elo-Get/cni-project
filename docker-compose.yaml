@@ -14,7 +14,7 @@ services:
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
-      INSIGHTFACE_HOME: "/app/models/insightface"
+      INSIGHTFACE_HOME: "/app/models/insightface/models/"
     command: >
       bash -lc "
       python -m pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu &&

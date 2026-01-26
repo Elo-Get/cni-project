@@ -6,9 +6,10 @@ frontend/node_modules/
 frontend/.next/
 
 
-# Ignore python cache files
+# Ignore cache
 backend/src/cni_analyzer/__pycache__/
 backend/src/cni_analyzer/*.pyc
 backend/src/cni_analyzer/*.pyo
+backend/src/cni_analyzer.egg-info/
 
 .DS_Store

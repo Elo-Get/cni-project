@@ -1,6 +1,7 @@
 import os
 import cv2
 import numpy as np
+import dotenv
 
 from insightface.model_zoo import get_model
 
@@ -9,8 +10,9 @@ from insightface.model_zoo import get_model
 # 1. Chargement du modèle ArcFace (ONNX local)
 # ------------------------------------------------------------------
 
-ARCFACE_ONNX_PATH = "models/arcface/buffalo_l/w600k_r50.onnx"
+dotenv.load_dotenv()
 
+ARCFACE_ONNX_PATH = os.path.join(os.getenv("INSIGHTFACE_HOME", "/app/models/insightface/models/"), "buffalo_l", "w600k_r50.onnx")
 
 def load_arcface_model(ctx_id: int = -1):
     """
