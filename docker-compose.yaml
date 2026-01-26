@@ -1,0 +1,45 @@
+name: face-id-app
+
+services:
+  backend:
+    platform: linux/amd64
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    working_dir: /app
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      INSIGHTFACE_HOME: "/app/models/insightface"
+    command: >
+      bash -lc "
+      python -m pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu &&
+      python -m pip install --no-cache-dir -e . &&
+      uvicorn server:app --host 0.0.0.0 --port 8000
+      "
+
+  front:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: "1"
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      NEXT_PUBLIC_API_URL: "http://localhost:8000"
+    depends_on:
+      - backend
+
+volumes:
+  pip_cache:

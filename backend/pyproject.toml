@@ -1,0 +1,27 @@
+[project]
+name = "cni_analyzer"
+version = "0.1.0"
+description = "Projet python pour vérifier l'identité d'une personne à partir de son image faciale."
+readme = "README.md"
+requires-python = ">=3.13"
+
+dependencies = [
+    "opencv-python-headless",
+    "numpy",
+    "huggingface_hub",
+    "timm",
+    "onnxruntime",
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

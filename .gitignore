@@ -1,0 +1,14 @@
+backend/checkpoints/
+backend/models/
+
+# Ignore frontend node modules
+frontend/node_modules/
+frontend/.next/
+
+
+# Ignore python cache files
+backend/src/cni_analyzer/__pycache__/
+backend/src/cni_analyzer/*.pyc
+backend/src/cni_analyzer/*.pyo
+
+.DS_Store
