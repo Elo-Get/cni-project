@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import cv2
+import base64
 from fastapi import FastAPI, UploadFile, File, Query, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -46,6 +47,12 @@ def _read_upload_as_bgr_image(upload: UploadFile) -> np.ndarray:
         raise HTTPException(status_code=400, detail=f"Image invalide: {upload.filename}")
     return img
 
+def _image_to_base64(img, fmt=".png") -> str:
+    success, buf = cv2.imencode(fmt, img)
+    if not success:
+        raise RuntimeError("Impossible d'encoder l'image")
+    return base64.b64encode(buf).decode("utf-8")
+
 
 @app.post("/verify")
 def verify(
@@ -63,7 +70,10 @@ def verify(
         face1 = extract_main_face(insight_app, img1)
         face2 = extract_main_face(insight_app, img2)
 
-        same, sim, prob = compare_face_arrays(
+        face1_b64 = _image_to_base64(face1)
+        face2_b64 = _image_to_base64(face2)
+
+        same, sim = compare_face_arrays(
             arcface_model,
             face1,
             face2,
@@ -74,8 +84,15 @@ def verify(
             {
                 "same": bool(same),
                 "similarity": float(sim),
-                "probability": float(prob),
                 "threshold": float(threshold),
+                "original_images": {
+                    "image1": image1.filename,
+                    "image2": image2.filename,
+                },
+                "face_crops_base64": {
+                    "face1": face1_b64,
+                    "face2": face2_b64,
+                },
             }
         )
     except HTTPException:

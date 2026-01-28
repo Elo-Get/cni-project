@@ -12,7 +12,7 @@ from insightface.model_zoo import get_model
 
 dotenv.load_dotenv()
 
-ARCFACE_ONNX_PATH = os.path.join(os.getenv("INSIGHTFACE_HOME", "/app/models/insightface/models/"), "buffalo_l", "w600k_r50.onnx")
+ARCFACE_ONNX_PATH = os.path.join(os.getenv("INSIGHTFACE_HOME", "/app/models/insightface/"), "models", "buffalo_l", "w600k_r50.onnx")
 
 def load_arcface_model(ctx_id: int = -1):
     """
@@ -81,7 +81,6 @@ def compare_face_arrays(
     Retourne:
       - same_person: bool
       - similarity: float (cosine [-1,1])
-      - prob: float ~ [0,1]
     """
     emb1 = get_embedding_from_array(model, face1_bgr)
     emb2 = get_embedding_from_array(model, face2_bgr)
@@ -89,8 +88,4 @@ def compare_face_arrays(
     similarity = float(np.dot(emb1, emb2))  # embeddings normalisés => cosinus direct
     same_person = similarity >= threshold
 
-    # mapping linéaire [-1,1] -> [0,1]
-    prob = (similarity + 1.0) / 2.0
-    prob = float(max(0.0, min(1.0, prob)))
-
-    return same_person, similarity, prob
+    return same_person, similarity

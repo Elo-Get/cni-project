@@ -1,7 +1,13 @@
 import cv2
-
+import base64
 from cni_analyzer.prepare import load_insightface, extract_main_face
 from cni_analyzer.compare import load_arcface_model, compare_face_arrays
+
+def image_to_base64(img, fmt=".png") -> str:
+    success, buf = cv2.imencode(fmt, img)
+    if not success:
+        raise RuntimeError("Impossible d'encoder l'image")
+    return base64.b64encode(buf).decode("utf-8")
 
 
 def verify_two_images(
@@ -30,15 +36,19 @@ def verify_two_images(
     # 3) Extraction des visages (en mémoire)
     face1 = extract_main_face(insight_app, img1)
     face2 = extract_main_face(insight_app, img2)
+    
+    face1_b64 = image_to_base64(face1)
+    face2_b64 = image_to_base64(face2)
+    
 
     # 4) Comparaison
-    same, sim, prob = compare_face_arrays(
+    same, sim = compare_face_arrays(
         arcface_model,
         face1,
         face2,
         threshold=threshold,
     )
-    return same, sim, prob
+    return same, sim, face1_b64, face2_b64
 
 
 if __name__ == "__main__":

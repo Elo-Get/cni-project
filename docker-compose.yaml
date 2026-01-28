@@ -2,7 +2,6 @@ name: face-id-app
 
 services:
   backend:
-    platform: linux/amd64
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -14,7 +13,7 @@ services:
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
-      INSIGHTFACE_HOME: "/app/models/insightface/models/"
+      INSIGHTFACE_HOME: "/app/models/insightface/"
     command: >
       bash -lc "
       python -m pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu &&

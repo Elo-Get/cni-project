@@ -100,5 +100,7 @@ def extract_main_face(
     elif k == 3:
         face_crop = cv2.rotate(face_crop, cv2.ROTATE_90_COUNTERCLOCKWISE)
     # k == 0 -> pas de rotation
+    
+    
 
     return face_crop
