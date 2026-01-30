@@ -14,7 +14,7 @@ export default function Page() {
   const [idImage, setIdImage] = useState<string | null>(null);
   const [isMatch, setIsMatch] = useState<boolean | null>(null);
 
-  const threshold: number = 0.35;
+  const threshold: number = 0.20;
 
   // Convert Base64 to Blob for API
   const dataURItoBlob = (dataURI: string) => {
@@ -48,7 +48,7 @@ export default function Page() {
     formData.append("image2", dataURItoBlob(img), "image2.png");
 
     // Comme Postman (champ texte dans form-data)
-    formData.append("threshold", "0.35"); // mets 0.35 si tu veux coller exactement à l'image
+    formData.append("threshold", threshold.toString()); // mets 0.35 si tu veux coller exactement à l'image
 
     try {
       const response = await fetch("http://localhost:8000/verify", {

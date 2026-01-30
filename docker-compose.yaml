@@ -5,18 +5,23 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        ADAFACE_CKPT_URL: "https://huggingface.co/VishalMishraTss/AdaFace/resolve/main/adaface_ir50_ms1mv2.ckpt"
+        ADAFACE_CKPT_NAME: "adaface_ir50_ms1mv2.ckpt"
+        
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - backend_models:/models
     working_dir: /app
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
       INSIGHTFACE_HOME: "/app/models/insightface/"
+      ADAFACE_CKPT_PATH: "/models/adaface/pretrained/adaface_ir50_ms1mv2.ckpt"
     command: >
       bash -lc "
-      python -m pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu &&
       python -m pip install --no-cache-dir -e . &&
       uvicorn server:app --host 0.0.0.0 --port 8000
       "
@@ -41,4 +46,4 @@ services:
       - backend
 
 volumes:
-  pip_cache:
+  backend_models:

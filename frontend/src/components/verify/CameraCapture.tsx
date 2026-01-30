@@ -18,34 +18,87 @@ const videoConstraints = {
 
 export default function CameraCapture({ mode, onCapture }: CameraCaptureProps) {
   const webcamRef = useRef<Webcam>(null);
+  const maskRef = useRef<HTMLDivElement>(null); // Référence pour le cadre visuel
+  const containerRef = useRef<HTMLDivElement>(null); // Référence pour le conteneur global
+  
   const [isMounted, setIsMounted] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
-  // 1. Attendre que le composant soit monté côté client (Fix écran noir SSR)
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
+  // Fonction de découpage (Cropping)
   const capture = useCallback(() => {
-    const imageSrc = webcamRef.current?.getScreenshot();
-    if (imageSrc) {
-      onCapture(imageSrc);
+    const video = webcamRef.current?.video;
+    const mask = maskRef.current;
+    const container = containerRef.current;
+
+    if (!video || !mask || !container) return;
+
+    // 1. Récupérer les dimensions réelles de la vidéo (ex: 1280x720)
+    const videoWidth = video.videoWidth;
+    const videoHeight = video.videoHeight;
+
+    // 2. Récupérer les dimensions affichées à l'écran (CSS)
+    // Comme on utilise object-cover, la vidéo peut être rognée visuellement ou étirée
+    const videoRect = video.getBoundingClientRect();
+    const maskRect = mask.getBoundingClientRect();
+
+    // 3. Calculer le ratio entre la taille réelle (capteur) et la taille affichée
+    // Note: Avec object-cover, il faut être précis. 
+    // Ici, on simplifie en assumant que la vidéo est centrée (object-center).
+    
+    // Facteur d'échelle (combien de pixels réels pour 1 pixel écran)
+    // On prend le ratio basé sur la largeur affichée vs réelle
+    const scaleX = videoWidth / videoRect.width;
+    const scaleY = videoHeight / videoRect.height;
+
+    // 4. Calculer la position du masque relative à la vidéo
+    // (mask.left - video.left) nous donne le décalage en pixels écran
+    const maskX = (maskRect.left - videoRect.left) * scaleX;
+    const maskY = (maskRect.top - videoRect.top) * scaleY;
+    const maskWidth = maskRect.width * scaleX;
+    const maskHeight = maskRect.height * scaleY;
+
+    // 5. Créer un canvas temporaire pour dessiner uniquement la zone du masque
+    const canvas = document.createElement("canvas");
+    canvas.width = maskWidth;
+    canvas.height = maskHeight;
+    const ctx = canvas.getContext("2d");
+
+    if (ctx) {
+      // Dessiner l'image découpée
+      ctx.drawImage(
+        video,
+        maskX,       // Source X (début de la coupe)
+        maskY,       // Source Y
+        maskWidth,   // Largeur source
+        maskHeight,  // Hauteur source
+        0,           // Destination X (sur le canvas)
+        0,           // Destination Y
+        maskWidth,   // Largeur destination
+        maskHeight   // Hauteur destination
+      );
+
+      // Convertir en base64
+      const croppedImage = canvas.toDataURL("image/jpeg", 0.9);
+      onCapture(croppedImage);
     }
   }, [webcamRef, onCapture]);
 
-  // Si pas encore monté (SSR), on renvoie un placeholder vide pour éviter les bugs
-  if (!isMounted) return <div className="w-full h-[500px] bg-black rounded-3xl" />;
+  if (!isMounted) return <div className="w-full h-[600px] bg-neutral-900 rounded-3xl" />;
 
   return (
-    <div className="relative w-full max-w-md mx-auto overflow-hidden rounded-3xl shadow-2xl border border-white/10 bg-black h-[600px] flex flex-col">
-      
-      {/* Zone Caméra */}
-      <div className="relative flex-1 bg-black">
+    <div 
+      ref={containerRef}
+      className="relative w-full max-w-md mx-auto overflow-hidden rounded-3xl shadow-2xl border border-white/10 bg-black h-[600px] flex flex-col"
+    >
+      <div className="relative flex-1 bg-black w-full h-full overflow-hidden">
         {cameraError ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-red-400 p-6 text-center z-50">
             <AlertCircle className="w-12 h-12 mb-2" />
-            <p>Erreur caméra : {cameraError}</p>
-            <p className="text-sm text-neutral-500 mt-2">Vérifiez les permissions de votre navigateur.</p>
+            <p>Erreur caméra</p>
           </div>
         ) : (
           <Webcam
@@ -53,50 +106,55 @@ export default function CameraCapture({ mode, onCapture }: CameraCaptureProps) {
             ref={webcamRef}
             screenshotFormat="image/jpeg"
             videoConstraints={videoConstraints}
+            // IMPORTANT : object-cover pour remplir tout l'écran, mais le JS gère le crop
             className="absolute inset-0 w-full h-full object-cover"
             mirrored={mode === "face"}
-            onUserMediaError={(err) => setCameraError("Accès refusé ou caméra indisponible")}
+            onUserMediaError={() => setCameraError("Erreur d'accès")}
             onUserMedia={() => setCameraError(null)}
           />
         )}
 
-        {/* Overlay Mask - Purement visuel, centré absolu */}
-        <div className="absolute inset-0 pointer-events-none flex items-center justify-center bg-black/40 z-10">
+        {/* Overlay Mask - Le Guide Visuel & La zone de Crop */}
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center bg-black/50 z-10">
+          
+          {/* C'est cet élément (maskRef) qui définit la zone à découper */}
           <div
-            className={`relative border-2 border-white/80 shadow-[0_0_50px_rgba(255,255,255,0.3)] 
+            ref={maskRef}
+            className={`relative border-2 border-white/80 shadow-[0_0_100px_rgba(0,0,0,0.5)] overflow-hidden bg-transparent
             ${
               mode === "face"
-                ? "w-64 h-80 rounded-[50%]" // Forme Visage
-                : "w-80 h-52 rounded-xl"    // Forme CNI
+                ? "w-64 h-80 rounded-[50%]" // Ovale Visage
+                : "w-80 h-52 rounded-xl"    // Rectangle CNI
             }`}
+            // On force un boxShadow inset pour assombrir l'intérieur légèrement si besoin, 
+            // ou surtout pour marquer la différence avec l'extérieur flouté
+            style={{ 
+              boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.5)" // Astuce CSS pour assombrir tout SAUF le cadre
+            }} 
           >
-            {/* Scan animation */}
+            {/* Animation de scan */}
             <motion.div
-              initial={{ top: 0, opacity: 0 }}
-              animate={{ top: "100%", opacity: [0, 1, 0] }}
-              transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-              className="absolute left-0 w-full h-0.5 bg-cyan-400 shadow-[0_0_15px_#22d3ee]"
+              initial={{ top: -10, opacity: 0 }}
+              animate={{ top: "110%", opacity: [0, 1, 0] }}
+              transition={{ repeat: Infinity, duration: 2.5, ease: "linear" }}
+              className="absolute left-0 w-full h-1 bg-cyan-400 shadow-[0_0_20px_#22d3ee]"
             />
           </div>
         </div>
       </div>
 
-      {/* Controls Area - Séparé du flux vidéo pour éviter l'overlap */}
-      {/* Z-index 20 assure qu'il est au dessus de tout */}
-      <div className="relative z-20 bg-black/80 backdrop-blur-sm p-6 pb-8 flex flex-col items-center gap-4 border-t border-white/10">
-        
-        {/* Texte explicatif - Maintenant dans le flux normal, au dessus du bouton */}
-        <p className="text-white/90 text-sm font-medium tracking-wide text-center">
-          {mode === "face" ? "Placez votre visage dans l'ovale" : "Alignez votre CNI dans le cadre"}
+      {/* Controls */}
+      <div className="relative z-20 bg-neutral-900/90 backdrop-blur-md p-6 flex flex-col items-center gap-4 border-t border-white/10">
+        <p className="text-white/80 text-sm font-medium tracking-wide text-center">
+          {mode === "face" ? "Gardez votre visage dans l'ovale" : "Alignez les bords de la CNI"}
         </p>
 
-        {/* Bouton déclencheur */}
         <button
           onClick={capture}
           disabled={!!cameraError}
-          className="group flex items-center justify-center w-16 h-16 bg-white rounded-full hover:scale-105 active:scale-95 transition-all duration-300 shadow-[0_0_30px_rgba(255,255,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
+          className="group flex items-center justify-center w-16 h-16 bg-white rounded-full hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
         >
-          <div className="w-14 h-14 border-2 border-black rounded-full flex items-center justify-center group-hover:bg-gray-100">
+          <div className="w-14 h-14 border-2 border-black rounded-full flex items-center justify-center group-hover:bg-gray-200">
             <Camera className="w-6 h-6 text-black" />
           </div>
         </button>

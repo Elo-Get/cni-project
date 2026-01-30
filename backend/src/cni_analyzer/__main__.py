@@ -1,7 +1,8 @@
 import cv2
 import base64
+import os
 from cni_analyzer.prepare import load_insightface, extract_main_face
-from cni_analyzer.compare import load_arcface_model, compare_face_arrays
+from cni_analyzer.compare import load_adaface_model, compare_face_arrays
 
 def image_to_base64(img, fmt=".png") -> str:
     success, buf = cv2.imencode(fmt, img)
@@ -28,10 +29,14 @@ def verify_two_images(
         raise RuntimeError(f"Impossible de lire l'image : {img_path_1}")
     if img2 is None:
         raise RuntimeError(f"Impossible de lire l'image : {img_path_2}")
+    
+    device = "cpu"
+    arch = "ir_50"
+    w_path = os.environ.get("ADAFACE_CKPT_PATH", "/models/adaface/pretrained/adaface_ir50_ms1mv2.ckpt")
 
     # 2) Modèles
     insight_app = load_insightface()
-    arcface_model = load_arcface_model(ctx_id=-1)
+    model = load_adaface_model(arch=arch, path=w_path, device=device)
 
     # 3) Extraction des visages (en mémoire)
     face1 = extract_main_face(insight_app, img1)
@@ -43,7 +48,7 @@ def verify_two_images(
 
     # 4) Comparaison
     same, sim = compare_face_arrays(
-        arcface_model,
+        model,
         face1,
         face2,
         threshold=threshold,

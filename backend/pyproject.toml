@@ -15,7 +15,8 @@ dependencies = [
     "onnxruntime",
     "fastapi",
     "uvicorn[standard]",
-    "python-multipart"
+    "python-multipart",
+    "pytorch_lightning"
 ]
 
 [build-system]

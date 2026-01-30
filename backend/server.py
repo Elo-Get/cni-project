@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+import os
 import numpy as np
 import cv2
 import base64
@@ -8,18 +8,22 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from cni_analyzer.prepare import load_insightface, extract_main_face
-from cni_analyzer.compare import load_arcface_model, compare_face_arrays
+from cni_analyzer.compare import load_adaface_model, compare_face_arrays
 
 from contextlib import asynccontextmanager
 
-insight_app = None
-arcface_model = None
+app = None
+model = None
+
+device = "cpu"
+arch = "ir_50"
+w_path = os.environ.get("ADAFACE_CKPT_PATH", "/models/adaface/pretrained/adaface_ir50_ms1mv2.ckpt")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global insight_app, arcface_model
+    global insight_app, model, device, arch, w_path
     insight_app = load_insightface()
-    arcface_model = load_arcface_model(ctx_id=-1)
+    model = load_adaface_model(arch=arch, path=w_path, device=device)
     yield
 
 app = FastAPI(
@@ -58,9 +62,9 @@ def _image_to_base64(img, fmt=".png") -> str:
 def verify(
     image1: UploadFile = File(..., description="Image 1 (CNI / identité)"),
     image2: UploadFile = File(..., description="Image 2 (selfie / autre)"),
-    threshold: float = Query(0.35, ge=0.0, le=1.0),
+    threshold: float = Query(0.70, ge=0.0, le=1.0, description="Seuil de similarité [0.0-1.0]"),
 ):
-    if insight_app is None or arcface_model is None:
+    if insight_app is None or model is None:
         raise HTTPException(status_code=503, detail="Modèles non chargés")
 
     try:
@@ -74,7 +78,7 @@ def verify(
         face2_b64 = _image_to_base64(face2)
 
         same, sim = compare_face_arrays(
-            arcface_model,
+            model,
             face1,
             face2,
             threshold=threshold,

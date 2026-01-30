@@ -1,91 +1,52 @@
 import os
-import cv2
 import numpy as np
-import dotenv
+import cv2
+import torch
+from cni_analyzer.adaface.inference import load_pretrained_model, to_input
 
-from insightface.model_zoo import get_model
 
-
-# ------------------------------------------------------------------
-# 1. Chargement du modèle ArcFace (ONNX local)
-# ------------------------------------------------------------------
-
-dotenv.load_dotenv()
-
-ARCFACE_ONNX_PATH = os.path.join(os.getenv("INSIGHTFACE_HOME", "/app/models/insightface/"), "models", "buffalo_l", "w600k_r50.onnx")
-
-def load_arcface_model(ctx_id: int = -1):
+class AdaFaceWrapper:
     """
-    Charge ArcFace depuis un fichier ONNX local.
-
-    ctx_id:
-      -1 = CPU
-       0 = GPU 0 (si onnxruntime-gpu est installé/configuré)
+    Wrapper qui expose une API proche d'insightface: model.get_feat(bgr_112)
     """
-    if not os.path.isfile(ARCFACE_ONNX_PATH):
-        raise FileNotFoundError(f"ONNX introuvable: {ARCFACE_ONNX_PATH}")
+    def __init__(self, arch: str, path: str, device: str = "cpu"):
+        self.device = torch.device(device)
+        self.model = load_pretrained_model(arch, path) 
+        self.model.eval().to(self.device)
 
-    # get_model accepte un chemin vers un .onnx
-    model = get_model(ARCFACE_ONNX_PATH)
-    if model is None:
-        raise RuntimeError(
-            f"Impossible de charger le modèle ONNX: {ARCFACE_ONNX_PATH}. "
-            "Vérifie ton installation insightface/onnxruntime."
-        )
+    @torch.inference_mode()
+    def get_feat(self, bgr_img_112: np.ndarray) -> np.ndarray:
+        # bgr_img_112: (112,112,3) uint8 BGR
+        if bgr_img_112.shape[:2] != (112, 112):
+            bgr_img_112 = cv2.resize(bgr_img_112, (112, 112), interpolation=cv2.INTER_AREA)
 
-    model.prepare(ctx_id=ctx_id)
-    return model
+        # AdaFace repo: to_input() veut une image "aligned" (ils parlent souvent de rgb align),
+        # mais la guideline dit bien: input final = bgr tensor + mean/std 0.5/0.5
+        # => on force ici une conversion BGR -> format attendu par to_input.
+        # to_input() dans le repo fait typiquement: HWC [0..255] -> BCHW float [-1..1]
+        
+        bgr_tensor = to_input(bgr_img_112).to(self.device)  # shape: (1,3,112,112)
+
+        feat, _ = self.model(bgr_tensor)  # feat: (1,512)
+        feat = feat.detach().cpu().numpy().reshape(-1).astype(np.float32)
+        return feat
 
 
-# ------------------------------------------------------------------
-# 2. Pré-traitement d'un visage BGR -> entrée ArcFace
-# ------------------------------------------------------------------
-
-def preprocess_face_for_arcface(bgr_img: np.ndarray) -> np.ndarray:
-    """
-    bgr_img : image OpenCV BGR (crop de visage)
-    sortie  : image 112x112 BGR (ArcFace reco attend typiquement 112x112 aligné)
-    """
-    img = cv2.resize(bgr_img, (112, 112), interpolation=cv2.INTER_AREA)
-    return img
+def load_adaface_model(arch: str, path: str, device: str):
+    return AdaFaceWrapper(arch=arch, path=path, device=device)
 
 
 def get_embedding_from_array(model, bgr_img: np.ndarray) -> np.ndarray:
-    """
-    Prend un visage BGR déjà croppé, renvoie embedding 512D normalisé.
-    """
-    inp = preprocess_face_for_arcface(bgr_img)
-
-    feat = model.get_feat(inp)  # (1,512) ou (512,)
-    feat = np.asarray(feat).reshape(-1).astype(np.float32)
-
-    # L2 normalize
+    feat = model.get_feat(bgr_img)
     feat /= (np.linalg.norm(feat) + 1e-12)
+    return feat
 
-    return feat  # (512,)
 
-
-# ------------------------------------------------------------------
-# 3. Comparaison cosinus + seuillage -> bool + "proba"
-# ------------------------------------------------------------------
-
-def compare_face_arrays(
-    model,
-    face1_bgr: np.ndarray,
-    face2_bgr: np.ndarray,
-    threshold: float = 0.35,
-):
-    """
-    Compare deux visages (np.ndarray BGR).
-
-    Retourne:
-      - same_person: bool
-      - similarity: float (cosine [-1,1])
-    """
+def compare_face_arrays(model, face1_bgr: np.ndarray, face2_bgr: np.ndarray, threshold: float = 0.70):
     emb1 = get_embedding_from_array(model, face1_bgr)
     emb2 = get_embedding_from_array(model, face2_bgr)
 
-    similarity = float(np.dot(emb1, emb2))  # embeddings normalisés => cosinus direct
+    cosine = float(np.dot(emb1, emb2))  # [-1,1]
+    similarity = (cosine + 1.0) / 2.0   # [0,1] (comme ton API actuelle)
     same_person = similarity >= threshold
-
     return same_person, similarity
