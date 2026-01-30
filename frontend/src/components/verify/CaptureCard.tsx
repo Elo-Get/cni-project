@@ -35,7 +35,6 @@ export default function CaptureCard({
     const url = blobToObjectUrl(value);
     setPreviewUrl(url);
     return () => revokeObjectUrl(url);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
   const onFile = async (file?: File | null) => {
@@ -55,7 +54,6 @@ export default function CaptureCard({
         p-6 overflow-hidden
       "
     >
-      {/* subtle glow */}
       <div className="pointer-events-none absolute -top-24 -left-24 h-64 w-64 rounded-full bg-fuchsia-500/10 blur-3xl" />
 
       <div className="mb-5 flex items-start justify-between gap-4">
@@ -97,7 +95,6 @@ export default function CaptureCard({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 10 }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={previewUrl} alt={title} className="h-44 w-full object-cover" />
 
               <div className="flex items-center justify-between p-3">

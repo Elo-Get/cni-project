@@ -37,38 +37,29 @@ export default function Page() {
     setIdImage(img);
     setStep("processing");
 
-    // Préparation de l'envoi API (comme Postman: form-data avec image1/image2 + threshold)
     const formData = new FormData();
 
-    // Important: donner un filename pour que ça soit vraiment comme Postman
     if (faceImage) {
       formData.append("image1", dataURItoBlob(faceImage), "image1.png");
     }
 
     formData.append("image2", dataURItoBlob(img), "image2.png");
 
-    // Comme Postman (champ texte dans form-data)
-    formData.append("threshold", threshold.toString()); // mets 0.35 si tu veux coller exactement à l'image
-
+    formData.append("threshold", threshold.toString()); 
     try {
       const response = await fetch("http://localhost:8000/verify", {
         method: "POST",
         body: formData,
-        // NE PAS mettre Content-Type manuellement (le navigateur met le bon boundary)
       });
 
-      // (optionnel) simulation loader
       await new Promise((r) => setTimeout(r, 2000));
 
-      // Toujours lire la réponse (même en erreur) pour logger le JSON d'erreur de l'API
       const contentType = response.headers.get("content-type") || "";
       const payload = contentType.includes("application/json")
         ? await response.json()
         : await response.text();
 
       if (response.ok) {
-        // Ton API renvoie plutôt: { same, similarity, probability, threshold }
-        // Donc on mappe vers ton state:
         const same =
           (payload && typeof payload === "object" && ("same" in payload ? payload.same : undefined)) ??
           (payload && typeof payload === "object" && ("match" in payload ? payload.match : undefined)) ??
@@ -90,13 +81,11 @@ export default function Page() {
 
   return (
     <main className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Background ambient light */}
       <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-purple-900/30 rounded-full blur-[100px]" />
       <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-cyan-900/20 rounded-full blur-[100px]" />
 
       <div className="z-10 w-full max-w-2xl text-center">
         
-        {/* Header */}
         <motion.div 
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -106,11 +95,9 @@ export default function Page() {
           <h1 className="text-2xl font-light tracking-widest uppercase text-white/90">Identity<span className="font-bold text-white">Secure</span></h1>
         </motion.div>
 
-        {/* Dynamic Content Area */}
         <div className="min-h-[600px] flex flex-col justify-center">
           <AnimatePresence mode="wait">
             
-            {/* STEP 0: INTRO */}
             {step === "intro" && (
               <motion.div
                 key="intro"
@@ -134,7 +121,6 @@ export default function Page() {
               </motion.div>
             )}
 
-            {/* STEP 1: FACE CAPTURE */}
             {step === "face" && (
               <motion.div
                 key="face"
@@ -147,7 +133,6 @@ export default function Page() {
               </motion.div>
             )}
 
-            {/* STEP 2: ID CAPTURE */}
             {step === "id" && (
               <motion.div
                 key="id"
@@ -160,7 +145,6 @@ export default function Page() {
               </motion.div>
             )}
 
-            {/* STEP 3: PROCESSING */}
             {step === "processing" && (
               <motion.div
                 key="processing"
@@ -173,7 +157,6 @@ export default function Page() {
               </motion.div>
             )}
 
-            {/* STEP 4: RESULT */}
             {step === "result" && (
               <motion.div
                 key="result"
