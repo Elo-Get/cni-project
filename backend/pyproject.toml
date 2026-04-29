@@ -16,7 +16,10 @@ dependencies = [
     "fastapi",
     "uvicorn[standard]",
     "python-multipart",
-    "pytorch_lightning"
+    "pytorch_lightning",
+    "ultralytics",
+    "transformers",
+    "Pillow"
 ]
 
 [build-system]

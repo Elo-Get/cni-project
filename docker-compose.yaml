@@ -20,6 +20,14 @@ services:
       PYTHONUNBUFFERED: "1"
       INSIGHTFACE_HOME: "/app/models/insightface/"
       ADAFACE_CKPT_PATH: "/models/adaface/pretrained/adaface_ir50_ms1mv2.ckpt"
+      SIGNATURE_MODEL_DIR: "/models/signature"
+      # Repo gated : fournir un token HF (https://huggingface.co/settings/tokens)
+      # ou pointer SIGNATURE_MODEL_PATH vers un .pt local monté en volume.
+      HF_TOKEN: "${HF_TOKEN:-}"
+      SIGNATURE_MODEL_REPO: "${SIGNATURE_MODEL_REPO:-tech4humans/yolov8s-signature-detector}"
+      SIGNATURE_MODEL_FILENAME: "${SIGNATURE_MODEL_FILENAME:-yolov8s.pt}"
+      SIGNATURE_MODEL_PATH: "${SIGNATURE_MODEL_PATH:-}"
+      SIGNATURE_EMBED_MODEL: "${SIGNATURE_EMBED_MODEL:-facebook/dinov2-small}"
     command: >
       bash -lc "
       python -m pip install --no-cache-dir -e . &&

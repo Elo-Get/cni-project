@@ -4,80 +4,228 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import CameraCapture from "@/components/verify/CameraCapture";
 import ElegantLoader from "@/components/verify/ElegantLoader";
-import { CheckCircle2, XCircle, ShieldCheck } from "lucide-react";
+import SignaturePad from "@/components/verify/SignaturePad";
+import {
+  CheckCircle2,
+  XCircle,
+  ShieldCheck,
+  AlertTriangle,
+  Check,
+  Loader2,
+} from "lucide-react";
 
-type VerificationStep = "intro" | "face" | "id" | "processing" | "result";
+type VerificationStep =
+  | "intro"
+  | "face"
+  | "face-check"
+  | "id"
+  | "signature-extract"
+  | "signature-draw"
+  | "processing"
+  | "result";
+
+type VerifyFullResponse = {
+  validated: boolean;
+  face: {
+    match: boolean;
+    similarity: number;
+    threshold: number;
+  };
+  signature: {
+    match: boolean;
+    score: number;
+    threshold: number;
+    ref_signature_base64: string;
+  };
+};
+
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export default function Page() {
   const [step, setStep] = useState<VerificationStep>("intro");
   const [faceImage, setFaceImage] = useState<string | null>(null);
-  const [idImage, setIdImage] = useState<string | null>(null);
-  const [isMatch, setIsMatch] = useState<boolean | null>(null);
+  const [idFaceImage, setIdFaceImage] = useState<string | null>(null);
+  const [idSignatureImage, setIdSignatureImage] = useState<string | null>(null);
+  const [refSignature, setRefSignature] = useState<string | null>(null);
+  const [faceChecked, setFaceChecked] = useState(false);
+  const [idFaceChecked, setIdFaceChecked] = useState(false);
+  const [signatureChecked, setSignatureChecked] = useState(false);
+  const [faceError, setFaceError] = useState<string | null>(null);
+  const [idError, setIdError] = useState<string | null>(null);
+  const [result, setResult] = useState<VerifyFullResponse | null>(null);
 
-  const threshold: number = 0.20;
+  const faceThreshold = 0.20;
+  const signatureThreshold = 0.40;
 
-  // Convert Base64 to Blob for API
-  const dataURItoBlob = (dataURI: string) => {
+  const dataURItoBlob = (dataURI: string): Blob => {
     const byteString = atob(dataURI.split(",")[1]);
     const mimeString = dataURI.split(",")[0].split(":")[1].split(";")[0];
     const ab = new ArrayBuffer(byteString.length);
     const ia = new Uint8Array(ab);
-    for (let i = 0; i < byteString.length; i++) {
-      ia[i] = byteString.charCodeAt(i);
-    }
+    for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
     return new Blob([ab], { type: mimeString });
   };
 
-  const handleFaceCapture = (img: string) => {
-    setFaceImage(img);
-    setStep("id");
-  };
+  const handleFaceCapture = async (img: string) => {
+    setFaceError(null);
+    setFaceChecked(false);
+    setStep("face-check");
 
-  const handleIdCapture = async (img: string) => {
-    setIdImage(img);
-    setStep("processing");
-
-    const formData = new FormData();
-
-    if (faceImage) {
-      formData.append("image1", dataURItoBlob(faceImage), "image1.png");
-    }
-
-    formData.append("image2", dataURItoBlob(img), "image2.png");
-
-    formData.append("threshold", threshold.toString()); 
     try {
-      const response = await fetch("http://localhost:8000/verify", {
+      const formData = new FormData();
+      formData.append("image", dataURItoBlob(img), "selfie.png");
+
+      const response = await fetch(`${API_URL}/detect-face`, {
         method: "POST",
         body: formData,
       });
 
-      await new Promise((r) => setTimeout(r, 2000));
+      if (response.status === 404) {
+        setFaceError(
+          "Aucun visage détecté. Cadrez bien votre visage dans l'ovale et réessayez."
+        );
+        setStep("face");
+        return;
+      }
 
-      const contentType = response.headers.get("content-type") || "";
-      const payload = contentType.includes("application/json")
-        ? await response.json()
-        : await response.text();
+      if (!response.ok) {
+        throw new Error(`Erreur ${response.status}`);
+      }
 
-      if (response.ok) {
-        const same =
-          (payload && typeof payload === "object" && ("same" in payload ? payload.same : undefined)) ??
-          (payload && typeof payload === "object" && ("match" in payload ? payload.match : undefined)) ??
-          (payload && typeof payload === "object" && ("is_same_person" in payload ? payload.is_same_person : undefined));
+      setFaceImage(img);
+      setFaceChecked(true);
+      setStep("id");
+    } catch (e) {
+      console.error("Face detection error:", e);
+      setFaceError("Erreur lors de l'analyse du selfie. Réessayez.");
+      setStep("face");
+    }
+  };
 
-        setIsMatch(Boolean(same));
+  const handleIdCapture = async (img: string) => {
+    setIdError(null);
+    setStep("signature-extract");
+
+    try {
+      const formData = new FormData();
+      formData.append("id_image", dataURItoBlob(img), "id.png");
+
+      const response = await fetch(`${API_URL}/detect-id-card`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erreur ${response.status}`);
+      }
+
+      const payload = await response.json();
+      const faceOkNow = Boolean(payload.face_detected);
+      const sigOkNow = Boolean(payload.signature_detected);
+
+      // On conserve les détections précédentes : portrait et signature
+      // peuvent venir de deux captures différentes.
+      const nextIdFaceImage = faceOkNow ? img : idFaceImage;
+      const nextIdSignatureImage = sigOkNow ? img : idSignatureImage;
+
+      if (faceOkNow) {
+        setIdFaceImage(img);
+        setIdFaceChecked(true);
+      }
+      if (sigOkNow) {
+        setIdSignatureImage(img);
+        setRefSignature(payload.signature_base64);
+        setSignatureChecked(true);
+      }
+
+      const haveFace = Boolean(nextIdFaceImage);
+      const haveSig = Boolean(nextIdSignatureImage);
+
+      if (haveFace && haveSig) {
+        setStep("signature-draw");
+        return;
+      }
+
+      if (!faceOkNow && !sigOkNow) {
+        setIdError(
+          haveFace
+            ? "Signature toujours non détectée. Zoomez sur la zone de signature."
+            : haveSig
+            ? "Portrait toujours non détecté. Recadrez pour inclure votre photo."
+            : "Aucun élément détecté sur cette photo. Recadrez la carte et réessayez."
+        );
+      } else if (faceOkNow && !haveSig) {
+        setIdError(
+          "Portrait enregistré ✓. Reprenez maintenant une photo en zoomant sur la signature."
+        );
+      } else if (sigOkNow && !haveFace) {
+        setIdError(
+          "Signature enregistrée ✓. Reprenez maintenant une photo en cadrant le portrait."
+        );
+      }
+
+      setStep("id");
+    } catch (e) {
+      console.error("Detection error:", e);
+      setIdError("Erreur lors de l'analyse de la carte. Réessayez.");
+      setStep("id");
+    }
+  };
+
+  const handleSignatureSubmit = async (drawnPng: string) => {
+    if (!faceImage || !idFaceImage || !idSignatureImage) return;
+    setStep("processing");
+
+    try {
+      const formData = new FormData();
+      formData.append("id_face_image", dataURItoBlob(idFaceImage), "id_face.png");
+      formData.append(
+        "id_signature_image",
+        dataURItoBlob(idSignatureImage),
+        "id_signature.png"
+      );
+      formData.append("selfie_image", dataURItoBlob(faceImage), "selfie.png");
+      formData.append("drawn_signature", dataURItoBlob(drawnPng), "signature.png");
+      formData.append("face_threshold", faceThreshold.toString());
+      formData.append("signature_threshold", signatureThreshold.toString());
+
+      const response = await fetch(`${API_URL}/verify-full`, {
+        method: "POST",
+        body: formData,
+      });
+
+      await new Promise((r) => setTimeout(r, 1500));
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.warn("API Error:", response.status, text);
+        setResult(null);
       } else {
-        console.warn("API Error:", response.status, payload);
-        setIsMatch(false);
+        const payload = (await response.json()) as VerifyFullResponse;
+        setResult(payload);
       }
     } catch (e) {
-      console.error("Error verifying", e);
-      setIsMatch(false);
+      console.error("Verify-full error:", e);
+      setResult(null);
     } finally {
       setStep("result");
     }
   };
 
+  const restart = () => {
+    setFaceImage(null);
+    setIdFaceImage(null);
+    setIdSignatureImage(null);
+    setRefSignature(null);
+    setFaceChecked(false);
+    setIdFaceChecked(false);
+    setSignatureChecked(false);
+    setFaceError(null);
+    setIdError(null);
+    setResult(null);
+    setStep("intro");
+  };
 
   return (
     <main className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-4 relative overflow-hidden">
@@ -85,19 +233,19 @@ export default function Page() {
       <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-cyan-900/20 rounded-full blur-[100px]" />
 
       <div className="z-10 w-full max-w-2xl text-center">
-        
-        <motion.div 
+        <motion.div
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           className="mb-10 flex items-center justify-center gap-3"
         >
           <ShieldCheck className="w-8 h-8 text-cyan-400" />
-          <h1 className="text-2xl font-light tracking-widest uppercase text-white/90">Identity<span className="font-bold text-white">Secure</span></h1>
+          <h1 className="text-2xl font-light tracking-widest uppercase text-white/90">
+            Identity<span className="font-bold text-white">Secure</span>
+          </h1>
         </motion.div>
 
         <div className="min-h-[600px] flex flex-col justify-center">
           <AnimatePresence mode="wait">
-            
             {step === "intro" && (
               <motion.div
                 key="intro"
@@ -110,7 +258,8 @@ export default function Page() {
                   Vérification d'identité
                 </h2>
                 <p className="text-neutral-400 max-w-md mx-auto">
-                  Nous allons procéder à une vérification rapide. Préparez votre visage et votre pièce d'identité.
+                  Selfie, carte d'identité, et signature manuscrite : 3 étapes pour
+                  confirmer votre identité.
                 </p>
                 <button
                   onClick={() => setStep("face")}
@@ -128,8 +277,32 @@ export default function Page() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -50 }}
               >
-                <h3 className="mb-6 text-xl text-white/80">Étape 1/2 : Selfie</h3>
+                <h3 className="mb-4 text-xl text-white/80">Étape 1/3 : Selfie</h3>
+                <StatusBadges
+                  faceChecked={faceChecked}
+                  idFaceChecked={idFaceChecked}
+                  signatureChecked={signatureChecked}
+                />
+                {faceError && (
+                  <div className="mb-4 mx-auto max-w-md flex items-start gap-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 p-4 text-left">
+                    <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-amber-200/90">{faceError}</p>
+                  </div>
+                )}
                 <CameraCapture mode="face" onCapture={handleFaceCapture} />
+              </motion.div>
+            )}
+
+            {step === "face-check" && (
+              <motion.div
+                key="face-check"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col items-center justify-center h-[500px] space-y-6"
+              >
+                <Loader2 className="w-12 h-12 text-cyan-400 animate-spin" />
+                <p className="text-white/60 text-sm">Vérification du visage...</p>
               </motion.div>
             )}
 
@@ -140,8 +313,60 @@ export default function Page() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -50 }}
               >
-                <h3 className="mb-6 text-xl text-white/80">Étape 2/2 : Carte d'identité</h3>
+                <h3 className="mb-4 text-xl text-white/80">
+                  Étape 2/3 : Carte d'identité
+                </h3>
+                <StatusBadges
+                  faceChecked={faceChecked}
+                  idFaceChecked={idFaceChecked}
+                  signatureChecked={signatureChecked}
+                />
+                {idError && (
+                  <div className="mb-4 mx-auto max-w-md flex items-start gap-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 p-4 text-left">
+                    <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-amber-200/90">{idError}</p>
+                  </div>
+                )}
                 <CameraCapture mode="id" onCapture={handleIdCapture} />
+              </motion.div>
+            )}
+
+            {step === "signature-extract" && (
+              <motion.div
+                key="signature-extract"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col items-center justify-center h-[500px] space-y-6"
+              >
+                <ElegantLoader />
+                <p className="text-white/60 text-sm">
+                  Détection de la signature sur votre carte...
+                </p>
+              </motion.div>
+            )}
+
+            {step === "signature-draw" && (
+              <motion.div
+                key="signature-draw"
+                initial={{ opacity: 0, x: 50 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -50 }}
+              >
+                <h3 className="mb-4 text-xl text-white/80">
+                  Étape 3/3 : Signature manuscrite
+                </h3>
+                <StatusBadges
+                  faceChecked={faceChecked}
+                  idFaceChecked={idFaceChecked}
+                  signatureChecked={signatureChecked}
+                />
+                <div className="max-w-lg mx-auto">
+                  <SignaturePad
+                    referenceImageBase64={refSignature}
+                    onSubmit={handleSignatureSubmit}
+                  />
+                </div>
               </motion.div>
             )}
 
@@ -151,9 +376,17 @@ export default function Page() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex items-center justify-center h-[500px]"
+                className="flex flex-col items-center justify-center h-[500px] space-y-6"
               >
+                <StatusBadges
+                  faceChecked={faceChecked}
+                  idFaceChecked={idFaceChecked}
+                  signatureChecked={signatureChecked}
+                />
                 <ElegantLoader />
+                <p className="text-white/60 text-sm">
+                  Analyse biométrique et signature...
+                </p>
               </motion.div>
             )}
 
@@ -164,23 +397,39 @@ export default function Page() {
                 animate={{ opacity: 1, scale: 1 }}
                 className="bg-white/5 border border-white/10 rounded-3xl p-10 backdrop-blur-md"
               >
-                {isMatch ? (
+                {result?.validated ? (
                   <div className="text-center space-y-4">
                     <div className="mx-auto w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mb-4">
                       <CheckCircle2 className="w-10 h-10 text-green-400" />
                     </div>
                     <h2 className="text-3xl font-bold text-white">Identité Confirmée</h2>
-                    <p className="text-neutral-400">Les données biométriques correspondent.</p>
+                    <p className="text-neutral-400">
+                      Visage et signature correspondent.
+                    </p>
+                    <ResultDetails result={result} />
+                    <button
+                      onClick={restart}
+                      className="mt-4 px-6 py-2 border border-white/20 rounded-full text-sm hover:bg-white/10 transition"
+                    >
+                      Nouvelle vérification
+                    </button>
                   </div>
                 ) : (
                   <div className="text-center space-y-4">
-                     <div className="mx-auto w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mb-4">
+                    <div className="mx-auto w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mb-4">
                       <XCircle className="w-10 h-10 text-red-400" />
                     </div>
                     <h2 className="text-3xl font-bold text-white">Échec de vérification</h2>
-                    <p className="text-neutral-400">Le visage ne correspond pas à la pièce d'identité.</p>
-                    <button 
-                      onClick={() => setStep("intro")}
+                    <p className="text-neutral-400">
+                      {result
+                        ? `${
+                            !result.face.match ? "Le visage" : "La signature"
+                          } ne correspond pas.`
+                        : "Erreur lors de la vérification."}
+                    </p>
+                    {result && <ResultDetails result={result} />}
+                    <button
+                      onClick={restart}
                       className="mt-4 px-6 py-2 border border-white/20 rounded-full text-sm hover:bg-white/10 transition"
                     >
                       Réessayer
@@ -193,5 +442,81 @@ export default function Page() {
         </div>
       </div>
     </main>
+  );
+}
+
+function StatusBadges({
+  faceChecked,
+  idFaceChecked,
+  signatureChecked,
+}: {
+  faceChecked: boolean;
+  idFaceChecked: boolean;
+  signatureChecked: boolean;
+}) {
+  return (
+    <div className="mb-6 flex items-center justify-center gap-2 flex-wrap">
+      <Badge label="Selfie" checked={faceChecked} />
+      <Badge label="Visage CNI" checked={idFaceChecked} />
+      <Badge label="Signature CNI" checked={signatureChecked} />
+    </div>
+  );
+}
+
+function Badge({ label, checked }: { label: string; checked: boolean }) {
+  return (
+    <div
+      className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ring-1 ${
+        checked
+          ? "bg-emerald-500/15 ring-emerald-400/40 text-emerald-300"
+          : "bg-white/5 ring-white/15 text-white/50"
+      }`}
+    >
+      <span
+        className={`flex items-center justify-center w-4 h-4 rounded-full ${
+          checked ? "bg-emerald-400/30" : "bg-white/10"
+        }`}
+      >
+        {checked ? (
+          <Check className="w-3 h-3 text-emerald-200" />
+        ) : (
+          <span className="block w-1.5 h-1.5 rounded-full bg-white/40" />
+        )}
+      </span>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function ResultDetails({ result }: { result: VerifyFullResponse }) {
+  return (
+    <div className="mt-6 grid grid-cols-2 gap-3 text-left">
+      <div className="rounded-xl bg-white/5 border border-white/10 p-4">
+        <p className="text-xs uppercase tracking-widest text-white/50 mb-1">Visage</p>
+        <p className="text-2xl font-semibold text-white">
+          {(result.face.similarity * 100).toFixed(0)}%
+        </p>
+        <p
+          className={`text-xs mt-1 ${
+            result.face.match ? "text-emerald-400" : "text-red-400"
+          }`}
+        >
+          {result.face.match ? "Correspondance" : "Non correspondant"}
+        </p>
+      </div>
+      <div className="rounded-xl bg-white/5 border border-white/10 p-4">
+        <p className="text-xs uppercase tracking-widest text-white/50 mb-1">Signature</p>
+        <p className="text-2xl font-semibold text-white">
+          {(result.signature.score * 100).toFixed(0)}%
+        </p>
+        <p
+          className={`text-xs mt-1 ${
+            result.signature.match ? "text-emerald-400" : "text-red-400"
+          }`}
+        >
+          {result.signature.match ? "Correspondance" : "Non correspondant"}
+        </p>
+      </div>
+    </div>
   );
 }
